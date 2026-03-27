@@ -3,19 +3,19 @@ class Value:
 
     def __init__(self, data, _children=(), _op=''):
         self.data = data
-        self.grad = 0
-        # internal variables used for autograd graph construction
+        self.grad = Value(0) # Treating grads as value objects as well now
+
         self._backward = lambda: None
         self._prev = set(_children)
-        self._op = _op # the op that produced this node for debugging purposes
+        self._op = _op 
 
     def __add__(self, other):
-        other = other if isinstance(other, Value) else Value(other) # ensuring other is a Value object
-        out = Value(self.data + other.data, (self, other), '+') # self and other are the children of the out Value
+        other = other if isinstance(other, Value) else Value(other) 
+        out = Value(self.data + other.data, (self, other), '+')
 
-        def _backward(): # defining how out Value should pass back gradient to its children
-            self.grad += out.grad # direct relationship between child and out's gradient
-            other.grad += out.grad
+        def _backward(): 
+            self.grad = self.grad + out.grad # changed from += to + to allow __add__ method to apply to grads
+            other.grad = other.grad + out.grad
         out._backward = _backward
 
         return out
@@ -25,8 +25,8 @@ class Value:
         out = Value(self.data * other.data, (self, other), '*') 
 
         def _backward(): 
-            self.grad += other.data * out.grad # relationship to out's gradient is scaled by the other node multiplying
-            other.grad += self.data * out.grad
+            self.grad = self.grad + (other.data * out.grad)
+            other.grad = self.grad + (self.data * out.grad)
         out._backward = _backward
 
         return out
@@ -36,7 +36,7 @@ class Value:
         out = Value(self.data**other, (self,), f'**{other}')
 
         def _backward():
-            self.grad += (other * self.data**(other-1)) * out.grad # relationship to out's gradient is scaled by 'other' many multiplications of selfs - n * x^(n-1)
+            self.grad = self.grad + ((other * self.data**(other-1)) * out.grad)
         out._backward = _backward
 
         return out
@@ -45,26 +45,25 @@ class Value:
         out = Value(0 if self.data < 0 else self.data, (self,), 'ReLU')
 
         def _backward():
-            self.grad += (out.data > 0) * out.grad # 0 grad if <= 0, else grad is proportional
+            self.grad += (out.data > 0) * out.grad
         out._backward = _backward
 
         return out
     
     def backward(self):
-        # topological order of all children in the graph
         topo = []
         visited = set()
         def create_topo(v):
-            if v not in visited: # end branch if already visited
+            if v not in visited:
                 visited.add(v)
                 for child in v._prev:
-                    create_topo(child) # DFS, appending bottom children nodes first then working up
+                    create_topo(child) 
                 topo.append(v)
         create_topo(self)
 
-        self.grad = 1
+        self.grad = Value(1)
         for v in reversed(topo):
-            v._backward() # Move gradient backwards top-down
+            v._backward()
 
     def __neg__(self): # -self
         return self * -1
