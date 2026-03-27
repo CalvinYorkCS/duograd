@@ -1,20 +1,32 @@
+import math
+
 class Value:
     """ Stores a single scalar value and its gradient """
 
     def __init__(self, data, _children=(), _op=''):
         self.data = data
-        self.grad = Value(0) # Treating grads as value objects as well now
+        self._grad = 0
 
         self._backward = lambda: None
         self._prev = set(_children)
         self._op = _op 
+
+    @property
+    def grad(self):
+        if isinstance(self._grad, (int, float)):
+            self._grad = Value(self._grad, _op='grad_init')
+        return self._grad
+    
+    @grad.setter
+    def grad(self, value):
+        self._grad = value
 
     def __add__(self, other):
         other = other if isinstance(other, Value) else Value(other) 
         out = Value(self.data + other.data, (self, other), '+')
 
         def _backward(): 
-            self.grad = self.grad + out.grad # changed from += to + to allow __add__ method to apply to grads
+            self.grad = self.grad + out.grad 
             other.grad = other.grad + out.grad
         out._backward = _backward
 
@@ -25,8 +37,8 @@ class Value:
         out = Value(self.data * other.data, (self, other), '*') 
 
         def _backward(): 
-            self.grad = self.grad + (other.data * out.grad)
-            other.grad = self.grad + (self.data * out.grad)
+            self.grad = self.grad + (other * out.grad)
+            other.grad = other.grad + (self * out.grad)
         out._backward = _backward
 
         return out
@@ -36,16 +48,26 @@ class Value:
         out = Value(self.data**other, (self,), f'**{other}')
 
         def _backward():
-            self.grad = self.grad + ((other * self.data**(other-1)) * out.grad)
+            self.grad = self.grad + ((other * self**(other-1)) * out.grad)
         out._backward = _backward
 
         return out
 
-    def __relu__(self):
+    def relu(self):
         out = Value(0 if self.data < 0 else self.data, (self,), 'ReLU')
 
         def _backward():
             self.grad += (out.data > 0) * out.grad
+        out._backward = _backward
+
+        return out
+    
+    def tanh(self):
+        x = self.data
+        out = Value((math.exp(x) - math.exp(-x)) / (math.exp(x) + math.exp(-x)), (self,), 'Tanh')
+
+        def _backward():
+            self.grad = self.grad + ((1 - out**2) * out.grad)
         out._backward = _backward
 
         return out
@@ -87,4 +109,17 @@ class Value:
         return other * self**-1
 
     def __repr__(self):
-        return f"Value(data={self.data}, grad={self.grad})"
+        return f"Value(data={self.data}, grad={self.grad.data})"
+    
+if __name__ == '__main__':
+    # f(x) = x**3
+    x = Value(3.0)
+    f = x**3
+
+    f.backward()
+    print(f"First derivative (3*x^2 at x=3): {x.grad.data}") 
+    # Should be 27.0
+
+    x.grad.backward()
+    print(f"Second derivative (6*x at x=3): {x.grad.grad.data}")
+    # Should be 18.0
