@@ -11,7 +11,7 @@ class Value:
         self._prev = set(_children)
         self._op = _op 
 
-    @property
+    @property # lazy loading grad as Value
     def grad(self):
         if isinstance(self._grad, (int, float)):
             self._grad = Value(self._grad, _op='grad_init')
@@ -33,6 +33,7 @@ class Value:
         return out
     
     def __mul__(self, other):
+        # print("in mul")
         other = other if isinstance(other, Value) else Value(other) 
         out = Value(self.data * other.data, (self, other), '*') 
 
@@ -41,16 +42,19 @@ class Value:
             other.grad = other.grad + (self * out.grad)
         out._backward = _backward
 
+        # print("out mul")
         return out
     
     def __pow__(self, other):
+        # print("in pow")
         assert isinstance(other, (int, float))
         out = Value(self.data**other, (self,), f'**{other}')
 
         def _backward():
-            self.grad = self.grad + ((other * self**(other-1)) * out.grad)
+            self.grad = self.grad + (other * (self**(other-1)) * out.grad)
         out._backward = _backward
 
+        # print("out pow")
         return out
 
     def relu(self):
@@ -112,7 +116,6 @@ class Value:
         return f"Value(data={self.data}, grad={self.grad.data})"
     
 if __name__ == '__main__':
-    # f(x) = x**3
     x = Value(3.0)
     f = x**3
 
@@ -120,6 +123,7 @@ if __name__ == '__main__':
     print(f"First derivative (3*x^2 at x=3): {x.grad.data}") 
     # Should be 27.0
 
+    x.grad.data = 0
     x.grad.backward()
-    print(f"Second derivative (6*x at x=3): {x.grad.grad.data}")
+    print(f"Second derivative (6*x at x=3): {x.grad.data}")
     # Should be 18.0
